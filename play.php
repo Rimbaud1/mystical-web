@@ -909,11 +909,49 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
         startButtonElement.style.display = 'none'; 
     }, 150);
   }
+
   function renderPlayerPosition() {
     const targetCell = gameGridElement.children[playerPos.y * MAP_SIZE + playerPos.x];
     if (targetCell) {
         if(playerDivElement.parentNode) playerDivElement.parentNode.removeChild(playerDivElement);
         targetCell.appendChild(playerDivElement);
+    }
+
+    // Player-centering logic
+    if (gridWrapperElement && playerDivElement && playerDivElement.offsetParent) { // Ensure player element is in the DOM for offset calculations
+        const playerOffsetLeft = playerDivElement.offsetLeft; // Relative to its offsetParent (the cell)
+        const playerOffsetTop = playerDivElement.offsetTop;   // Relative to its offsetParent (the cell)
+        
+        // Get cell's offset relative to the grid itself
+        const cellContainingPlayer = gameGridElement.children[playerPos.y * MAP_SIZE + playerPos.x];
+        const cellOffsetLeft = cellContainingPlayer.offsetLeft;
+        const cellOffsetTop = cellContainingPlayer.offsetTop;
+
+        const viewportWidth = gridWrapperElement.clientWidth;
+        const viewportHeight = gridWrapperElement.clientHeight;
+
+        // Calculate the center of the player element relative to the grid
+        const playerCenterXInGrid = cellOffsetLeft + playerOffsetLeft + currentTilePx / 2;
+        const playerCenterYInGrid = cellOffsetTop + playerOffsetTop + currentTilePx / 2;
+        
+        // Calculate the target scroll position to bring player's center to viewport's center
+        let targetScrollLeft = playerCenterXInGrid - viewportWidth / 2;
+        let targetScrollTop = playerCenterYInGrid - viewportHeight / 2;
+
+        // Ensure scroll values are not negative or beyond max scroll width/height
+        targetScrollLeft = Math.max(0, Math.min(targetScrollLeft, gridWrapperElement.scrollWidth - viewportWidth));
+        targetScrollTop = Math.max(0, Math.min(targetScrollTop, gridWrapperElement.scrollHeight - viewportHeight));
+
+        if (gridWrapperElement.scrollTo) {
+            gridWrapperElement.scrollTo({
+                left: targetScrollLeft,
+                top: targetScrollTop,
+                behavior: 'smooth' 
+            });
+        } else { // Fallback for older browsers
+            gridWrapperElement.scrollLeft = targetScrollLeft;
+            gridWrapperElement.scrollTop = targetScrollTop;
+        }
     }
   }
 
