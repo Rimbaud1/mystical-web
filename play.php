@@ -968,12 +968,18 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
     isGameActive = false; clearInterval(gameTimerId); if(ambianceSound) { ambianceSound.pause(); ambianceSound.currentTime = 0; }
     if (isVictory) playSoundEffect('victory', 0.6); else playSoundEffect('giveUp', 0.5);
 
+    // Check for credits redirect before anything else
     if (isVictory && MAP_TYPE === 'base' && MAP_ID_FOR_SAVE === 4) {
         window.location.href = 'credits.html';
         return; 
     }
     
+    let recordMessages = []; // Initialize here to be available for the modal
+    let ajaxPerformed = false;
+
+    // Only try to save score if it's a base/custom map, or a 'random' map that was named for saving.
     if (MAP_ID_FOR_SAVE !== 'random' || (MAP_TYPE === 'random' && <?= isset($_SESSION['random_map_to_save']) ? 'true' : 'false' ?> && MAP_ID_RAW.startsWith('random_'))) {
+        ajaxPerformed = true;
         const formData = new FormData(); 
         formData.append('map_id', MAP_ID_FOR_SAVE); 
         formData.append('map_type', MAP_TYPE); 
@@ -985,20 +991,70 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
              formData.append('save_random_map', '1');
         }
 
-        let recordMessages = [];
-        try { const response = await fetch('ajax_save_score.php', { method: 'POST', body: formData }); const resultText = await response.text(); try { const result = JSON.parse(resultText); if (result.success) { console.log('Score/Map interaction processed.'); if (result.new_best_time) recordMessages.push({type: 'time', text: "🏆 New Best Time Record!"}); if (result.new_best_moves) recordMessages.push({type: 'moves', text: "✨ New Fewest Moves Record!"}); if (result.map_saved_as_id) { titleText += ` (Saved as ID: ${result.map_saved_as_id})`; } } else { console.error('Failed to save score/map:', result.error || 'Unknown. Raw:', resultText); } } catch (e) { console.error('Error parsing JSON (ajax_save_score):', e, "Raw:", resultText); } } catch (error) { console.error('Network error saving score/map:', error); }
+        try { 
+            const response = await fetch('ajax_save_score.php', { method: 'POST', body: formData }); 
+            const resultText = await response.text(); 
+            try { 
+                const result = JSON.parse(resultText); 
+                if (result.success) { 
+                    console.log('Score/Map interaction processed.'); 
+                    if (result.new_best_time) recordMessages.push({type: 'time', text: "🏆 New Best Time Record!"}); 
+                    if (result.new_best_moves) recordMessages.push({type: 'moves', text: "✨ New Fewest Moves Record!"}); 
+                    if (result.map_saved_as_id) { titleText += ` (Saved as ID: ${result.map_saved_as_id})`; } 
+                } else { 
+                    console.error('Failed to save score/map:', result.error || 'Unknown. Raw:', resultText); 
+                    // Optionally, add a user-facing error message to recordMessages if desired
+                    // recordMessages.push({type: 'error', text: "Could not save score: " + (result.error || "Unknown error")});
+                } 
+            } catch (e) { 
+                console.error('Error parsing JSON (ajax_save_score):', e, "Raw:", resultText); 
+                // recordMessages.push({type: 'error', text: "Error processing score response."});
+            } 
+        } catch (error) { 
+            console.error('Network error saving score/map:', error); 
+            // recordMessages.push({type: 'error', text: "Network error saving score."});
+        }
     }
     
-    const modalOverlayDiv = document.createElement('div'); modalOverlayDiv.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-50 modal-backdrop p-4';
-    let modalHTML = `<div class="panel p-6 md:p-8 text-center modal-content w-full max-w-md"><h2 class="text-3xl ${isVictory ? 'text-green-400' : 'text-red-500'} mb-3 font-bold"><i class="fas ${isVictory ? 'fa-trophy' : (titleText.includes('Abandoned') ? 'fa-flag' : 'fa-skull-crossbones')} mr-2"></i>${titleText}</h2>`;
-    if (isVictory && recordMessages.length > 0) { recordMessages.forEach(msg => { let RmsgClass = 'record-both'; if (recordMessages.length === 1) RmsgClass = msg.type === 'time' ? 'record-time' : 'record-moves'; modalHTML += `<p class="record-message ${RmsgClass} mb-1">${msg.text}</p>`; });}
-    modalHTML += `<p class="mb-1 text-gray-300 text-lg">Moves: <b class="text-amber-300">${moveCounter}</b></p><p class="mb-6 text-gray-300 text-lg">Time: <b class="text-amber-300">${timeElapsedSec}s</b></p>`;
-    if (isVictory && MAP_TYPE === 'base' && MAP_ID_FOR_SAVE < 4) modalHTML += `<a href="play.php?mode=play&level=${MAP_ID_FOR_SAVE + 1}" class="btn text-base mb-3 w-full sm:w-auto sm:mr-2"><i class="fas fa-arrow-right mr-2"></i>Next Chapter</a>`;
+    const modalOverlayDiv = document.createElement('div'); 
+    modalOverlayDiv.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-50 modal-backdrop p-4';
+    
+    let modalHTML = `<div class="panel p-6 md:p-8 text-center modal-content w-full max-w-md">`;
+    modalHTML += `<h2 class="text-3xl ${isVictory ? 'text-green-400' : 'text-red-500'} mb-4 font-bold"><i class="fas ${isVictory ? 'fa-trophy' : (titleText.includes('Abandoned') ? 'fa-flag' : 'fa-skull-crossbones')} mr-2"></i>${titleText}</h2>`;
+    
+    // Display record messages first if any
+    if (recordMessages.length > 0) { 
+        recordMessages.forEach(msg => { 
+            let RmsgClass = 'record-message mb-2 text-sm '; // Base classes
+            if (msg.type === 'time') RmsgClass += 'record-time';
+            else if (msg.type === 'moves') RmsgClass += 'record-moves';
+            else if (msg.type === 'error') RmsgClass += 'bg-red-500/90 border border-red-700 text-white p-2 rounded'; // Example error styling
+            else RmsgClass += 'record-both'; // Default for combined or other types
+            modalHTML += `<p class="${RmsgClass}">${msg.text}</p>`; 
+        });
+    }
+    
+    modalHTML += `<p class="mb-1 text-gray-300 text-lg">Moves: <b class="text-amber-300">${moveCounter}</b></p>`;
+    modalHTML += `<p class="mb-6 text-gray-300 text-lg">Time: <b class="text-amber-300">${timeElapsedSec}s</b></p>`;
+    
+    // Button container
+    modalHTML += `<div class="mt-6 flex flex-col sm:flex-row sm:justify-center gap-3">`;
+
+    if (isVictory && MAP_TYPE === 'base' && MAP_ID_FOR_SAVE < 4) {
+        modalHTML += `<a href="play.php?mode=play&level=${MAP_ID_FOR_SAVE + 1}" class="btn text-base w-full sm:w-auto"><i class="fas fa-arrow-right mr-2"></i>Next Chapter</a>`;
+    }
     
     let backLink = `play.php?mode=${MAP_TYPE === 'base' ? 'select_base_level' : (MAP_TYPE === 'custom' ? 'select_custom_level' : 'random_options')}`;
     let backIcon = MAP_TYPE === 'base' ? 'fa-map-signs' : (MAP_TYPE === 'custom' ? 'fa-scroll' : 'fa-cogs');
-    modalHTML += `<a href="${backLink}" class="btn text-base w-full sm:w-auto" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);"><i class="fas ${backIcon} mr-2"></i>Back to Selection</a><a href="play.php?mode=select_initial_mode" class="block mt-4 text-sm text-gray-400 hover:text-amber-300">Return to Main Menu</a></div>`;
-    modalOverlayDiv.innerHTML = modalHTML; document.body.appendChild(modalOverlayDiv); modalOverlayDiv.onclick = (e) => { if (e.target === modalOverlayDiv) modalOverlayDiv.remove(); }
+    modalHTML += `<a href="${backLink}" class="btn text-base w-full sm:w-auto" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);"><i class="fas ${backIcon} mr-2"></i>Back to Selection</a>`;
+    
+    modalHTML += `</div>`; // End button container
+    modalHTML += `<a href="play.php?mode=select_initial_mode" class="block mt-6 text-sm text-gray-400 hover:text-amber-300">Return to Main Menu</a>`;
+    modalHTML += `</div>`; // End panel
+
+    modalOverlayDiv.innerHTML = modalHTML; 
+    document.body.appendChild(modalOverlayDiv); 
+    modalOverlayDiv.onclick = (e) => { if (e.target === modalOverlayDiv) modalOverlayDiv.remove(); }
   }
 
   document.onkeydown = event => { if (!isGameActive || !playerDivElement) return; let moved = false; switch(event.key.toLowerCase()) { case 'arrowup': case 'w': handlePlayerMove(0, -1); moved = true; break; case 'arrowdown': case 's': handlePlayerMove(0, 1); moved = true; break; case 'arrowleft': case 'a': handlePlayerMove(-1, 0); moved = true; break; case 'arrowright': case 'd': handlePlayerMove(1, 0); moved = true; break; } if (moved) event.preventDefault(); };
