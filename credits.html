@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mystical Dungeons - Credits</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=MedievalSharp&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&display=swap" rel="stylesheet"> <!-- Gardée pour les titres de section dans les crédits -->
+    <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --color-bg: #0a080e; 
+            --color-text-primary: #f0f0f0; 
+            --color-text-secondary: #c0b8b0;
+            --color-gold-dark: #a06c26;
+            --color-gold-medium: #f7b733;
+            --color-gold-light: #ffeecc; 
+            --color-accent-1: #ff8906; /* Orange de index.php */
+            --color-accent-2: #e53170; /* Rose/Rouge de index.php */
+            --font-logo: 'MedievalSharp', cursive; /* Police du logo de index.php */
+            --font-title-credits: 'Cinzel Decorative', cursive; /* Pour les titres DANS les crédits */
+            --font-readable: 'Lora', serif;
+            --font-story: 'MedievalSharp', cursive; /* Pour le texte narratif, pour rester dans le thème */
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--color-bg);
+            color: var(--color-text-primary);
+            font-family: var(--font-readable);
+        }
+
+        .container-fullscreen {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 100;
+            opacity: 1;
+            background: radial-gradient(circle at center, rgba(15,14,23,0.95) 0%, var(--color-bg) 75%);
+        }
+        .container-fullscreen.fade-out {
+            animation: fadeOutScreen 1.2s ease-in-out forwards;
+        }
+        @keyframes fadeOutScreen {
+            to { opacity: 0; pointer-events: none; }
+        }
+
+        /* --- Animation du Logo (MODIFIÉE) --- */
+        #logo-animation { text-align: center; }
+
+        .logo-line-animated { /* Nouveau nom pour éviter confusion avec .logo-line de index */
+            font-family: var(--font-logo); /* Utilisation de MedievalSharp */
+            font-weight: bold; /* MedievalSharp est souvent mieux en gras pour les titres */
+            opacity: 0;
+            transform: translateY(40px) scale(0.8);
+            letter-spacing: 1px; /* MedievalSharp n'a pas besoin d'autant d'espacement que Cinzel */
+            /* Application du gradient de index.php */
+            background: linear-gradient(135deg, var(--color-accent-1) 0%, var(--color-accent-2) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent; /* Nécessaire pour que le background-clip fonctionne */
+            background-clip: text;
+            /* text-fill-color: transparent; */ /* Déjà là avec -webkit- */
+        }
+        .logo-line-animated.mystical {
+            font-size: clamp(3.5rem, 12vw, 7rem); /* Ajusté pour MedievalSharp */
+            animation: unfoldTextLogo 2s cubic-bezier(0.19, 1, 0.22, 1) 0.5s forwards;
+        }
+        .logo-line-animated.dungeons {
+            font-size: clamp(4rem, 14vw, 8rem); /* Ajusté pour MedievalSharp */
+            animation: unfoldTextLogo 2s cubic-bezier(0.19, 1, 0.22, 1) 1s forwards;
+            margin-top: -1.5rem; /* Ajustement pour chevauchement avec MedievalSharp */
+        }
+
+        @keyframes unfoldTextLogo { /* Animation pour le logo MedievalSharp */
+            0% { opacity: 0; transform: translateY(50px) scale(0.7); filter: blur(5px); }
+            70% { opacity: 1; transform: translateY(0) scale(1.05); filter: blur(0); }
+            100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+        }
+        
+        #dungeon-gate { font-size: clamp(4rem, 15vw, 6rem); color: var(--color-gold-dark); margin-top: 2.5rem; opacity: 0; transform: scale(0.5); animation: gateAppear 1.5s ease-out 2.5s forwards; position: relative; }
+        #dungeon-gate.open .fa-dungeon { animation: gateOpenEffect 2s ease-in-out forwards; }
+        #dungeon-gate.open .gate-glow { opacity: 1; animation: glowPulse 2s ease-in-out forwards; }
+        .gate-glow { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 150%; height: 150%; border-radius: 50%; background: radial-gradient(circle, rgba(255, 200, 100, 0.7) 0%, rgba(255,137,6,0.3) 40%, transparent 70%); opacity: 0; z-index: -1; }
+        @keyframes gateAppear { from { opacity: 0; transform: scale(0.5) rotate(-45deg); } to { opacity: 1; transform: scale(1) rotate(0deg); } }
+        @keyframes gateOpenEffect { 0% { transform: scale(1) rotateY(0deg); color: var(--color-gold-dark); } 40% { transform: scale(1.3) rotateY(30deg); color: var(--color-gold-medium); } 60% { transform: scale(1.3) rotateY(-30deg); color: var(--color-gold-light); } 100% { transform: scale(1.2) rotateY(0deg); color: var(--color-gold-light); opacity: 0.7;} }
+        @keyframes glowPulse { 0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); } 50% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2); } }
+
+        /* --- Message "Press Space" (inchangé) --- */
+        #press-space-prompt { position: fixed; bottom: 10vh; left: 50%; transform: translateX(-50%); z-index: 110; color: var(--color-text-secondary); font-family: var(--font-main); font-size: clamp(1.2rem, 2.5vw, 1.6rem); padding: 10px 20px; background-color: rgba(0,0,0,0.5); border-radius: 5px; opacity: 0; animation: fadeInPrompt 1s ease-out 4.5s forwards, pulsePrompt 2s infinite 5.5s; }
+        @keyframes fadeInPrompt { to { opacity: 1; } }
+        @keyframes pulsePrompt { 0%, 100% { transform: translateX(-50%) scale(1); opacity: 1;} 50% { transform: translateX(-50%) scale(1.05); opacity: 0.7;} }
+        #press-space-prompt.hidden { display: none; }
+
+
+        /* --- Conteneur des Crédits à Défilement (inchangé sauf police du story-text) --- */
+        #credits-scroll-wrapper { width: 100%; height: 100%; position: fixed; top: 0; left: 0; overflow: hidden; z-index: 50; opacity: 0; visibility: hidden; pointer-events: none; mask-image: linear-gradient(transparent 0%, black 15%, black 85%, transparent 100%); -webkit-mask-image: linear-gradient(transparent 0%, black 15%, black 85%, transparent 100%); }
+        #credits-scroll-wrapper.visible { opacity: 1; visibility: visible; pointer-events: auto; animation: fadeInScroller 1s ease-out forwards; }
+        @keyframes fadeInScroller { from { opacity: 0; } to { opacity: 1; } }
+        #credits-list { display: flex; flex-direction: column; align-items: center; width: 100%; padding: 0 clamp(10px, 5vw, 50px); box-sizing: border-box; text-align: center; }
+        .credit-item { margin-bottom: 50px; width: 100%; max-width: 750px; opacity: 1; }
+        .credit-item:first-child { margin-top: 10vh; }
+        .credit-item:last-child { margin-bottom: 20vh; }
+
+        .credits-title-main { font-family: var(--font-title-credits); font-weight: 900; font-size: clamp(3rem, 7vw, 5rem); color: var(--color-gold-medium); text-shadow: 0 0 10px var(--color-gold-dark), 2px 2px 6px rgba(0,0,0,0.8); margin-bottom: 70px; line-height: 1.2; letter-spacing: 1px; }
+        .team-title-scroll { font-family: var(--font-title-credits); font-weight: 700; font-size: clamp(2.2rem, 4.5vw, 3.2rem); color: var(--color-gold-light); text-shadow: 0 0 7px var(--color-gold-dark), 1px 1px 4px rgba(0,0,0,0.6); margin-bottom: 30px; }
+        .member-name-scroll { font-family: var(--font-readable); font-weight: 700; font-size: clamp(1.5rem, 3vw, 2.2rem); color: var(--color-text-primary); margin-bottom: 8px; letter-spacing: 0.5px; }
+        .member-role-scroll { font-family: var(--font-readable); font-style: italic; font-size: clamp(1.1rem, 2vw, 1.4rem); color: var(--color-text-secondary); margin-bottom: 25px; line-height: 1.4; }
+        .story-text-scroll { font-family: var(--font-story); color: var(--color-text-secondary); font-size: clamp(1.2rem, 2.2vw, 1.6rem); line-height: 1.8; margin: 70px auto; padding: 0 2%; max-width: 700px; text-shadow: 1px 1px 2px rgba(0,0,0,0.3); }
+
+
+        /* --- Boutons d'action (inchangé) --- */
+        #final-actions { position: fixed; bottom: -100px; left: 50%; transform: translateX(-50%); z-index: 60; opacity: 0; transition: opacity 0.8s ease-out, bottom 0.8s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+        #final-actions.visible { opacity: 1; bottom: 5vh; }
+        .cta-button { font-family: var(--font-main); font-size: clamp(1.1rem, 2.2vw, 1.5rem); background: linear-gradient(145deg, var(--color-accent-1) 0%, var(--color-accent-2) 100%); color: white; padding: 16px 32px; border-radius: 10px; text-decoration: none; text-shadow: 1px 1px 3px rgba(0,0,0,0.5); border: 2px solid rgba(255,255,255,0.1); cursor: pointer; display: inline-block; margin: 10px 15px; transition: transform 0.2s ease-out, box-shadow 0.2s ease-out; box-shadow: 0 5px 20px rgba(0,0,0,0.4), 0 3px 8px rgba(0,0,0,0.3); }
+        .cta-button:hover { transform: translateY(-4px) scale(1.05); box-shadow: 0 10px 30px rgba(var(--color-accent-2-rgb),0.4), 0 6px 15px rgba(var(--color-accent-1-rgb),0.3); }
+        .cta-button i { margin-right: 12px; }
+
+    </style>
+</head>
+<body>
+
+    <div id="logo-screen" class="container-fullscreen">
+        <div id="logo-animation">
+            <!-- Changement de classe pour le style du logo -->
+            <div class="logo-line-animated mystical">Mystical</div>
+            <div class="logo-line-animated dungeons">Dungeons</div>
+            <div id="dungeon-gate">
+                <i class="fas fa-dungeon"></i>
+                <div class="gate-glow"></div>
+            </div>
+        </div>
+        <div id="press-space-prompt">[ Press SPACE to begin the descent ]</div>
+    </div>
+
+    <div id="credits-scroll-wrapper">
+        <div id="credits-list">
+            <div class="credit-item">
+                <h1 class="credits-title-main">The Creators</h1>
+            </div>
+            <div class="credit-item">
+                 <p class="story-text-scroll">"From the deepest abysses of imagination, a dedicated fellowship toiled to forge these haunted halls..."</p>
+            </div>
+            <div class="credit-item">
+                <h2 class="team-title-scroll">Project Lead</h2>
+                <p class="member-name-scroll">Tom KETHIRI</p> <!-- Nom complet -->
+                <p class="member-role-scroll">Architect of Shadows</p>
+            </div>
+            <div class="credit-item">
+                <h2 class="team-title-scroll">Web Development</h2>
+                <p class="member-name-scroll">Rimbaud BONIFACE (Lead)</p> <!-- Nom complet -->
+                <p class="member-role-scroll">Portal Crafter & UI Illusionist</p>
+                <p class="member-name-scroll">Tom KETHIRI</p> <!-- Nom complet -->
+                <p class="member-role-scroll">Core Engine Forger</p>
+            </div>
+            <div class="credit-item">
+                <h2 class="team-title-scroll">Solver Algorithm</h2>
+                <p class="member-name-scroll">Gaston CARDINEAUD (Lead)</p> <!-- Nom complet -->
+                <p class="member-role-scroll">Pathfinding Oracle</p>
+                <p class="member-name-scroll">Edgar LEDDA</p> <!-- Nom complet -->
+                <p class="member-role-scroll">Algorithmic Cartographer</p>
+            </div>
+            <div class="credit-item">
+                <h2 class="team-title-scroll">Dungeon Generation</h2>
+                <p class="member-name-scroll">Simon DUMAS (Lead)</p> <!-- Nom complet -->
+                <p class="member-role-scroll">Architect of Infinite Labyrinths</p>
+                <p class="member-name-scroll">Mathilde BENNAB</p> <!-- Nom complet -->
+                <p class="member-role-scroll">Artisan of Procedural Realities</p>
+                <p class="member-name-scroll">Kevin BURA</p> <!-- Nom complet -->
+                <p class="member-role-scroll">Master of Randomness</p>
+            </div>
+            <div class="credit-item">
+                <h2 class="team-title-scroll">Game Design & Lore</h2>
+                <p class="member-name-scroll">Rimbaud BONIFACE</p> <!-- Nom complet -->
+                <p class="member-role-scroll">Visionary of the Abyss</p>
+            </div>
+            <div class="credit-item">
+                 <p class="story-text-scroll">"May their echoes guide your path... or lead you to glorious doom."</p>
+            </div>
+             <div class="credit-item">
+                 <p class="story-text-scroll" style="font-size: clamp(1rem, 1.8vw, 1.3rem); color: var(--color-text-secondary);">Mystical Dungeons © 2025</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="final-actions">
+        <a href="http://localhost/play.php?mode=select_custom_level" class="cta-button">
+            <i class="fas fa-users"></i> Community Realms
+        </a>
+        <a href="http://localhost/play.php" class="cta-button">
+            <i class="fas fa-dice-d20"></i> Random Depths
+        </a>
+         <a href="index.php" class="cta-button">
+            <i class="fas fa-home"></i> Return Home
+        </a>
+    </div>
+
+    <audio id="outro-audio" src="assets/audios/outro.mp3" preload="auto"></audio>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const logoScreen = document.getElementById('logo-screen');
+            const dungeonGate = document.getElementById('dungeon-gate');
+            const pressSpacePrompt = document.getElementById('press-space-prompt');
+            const creditsScrollWrapper = document.getElementById('credits-scroll-wrapper');
+            const creditsList = document.getElementById('credits-list');
+            const finalActions = document.getElementById('final-actions');
+            const outroAudio = document.getElementById('outro-audio');
+            let creditsStarted = false;
+
+            function hexToRgb(hex) { 
+                let r = 0, g = 0, b = 0;
+                if (!hex || hex.length < 4) return [0,0,0]; // Safety check
+                if (hex.length == 4) { r = "0x" + hex[1] + hex[1]; g = "0x" + hex[2] + hex[2]; b = "0x" + hex[3] + hex[3];
+                } else if (hex.length == 7) { r = "0x" + hex[1] + hex[2]; g = "0x" + hex[3] + hex[4]; b = "0x" + hex[5] + hex[6]; }
+                return [+r, +g, +b];
+            }
+            try {
+                const accent1Color = getComputedStyle(document.documentElement).getPropertyValue('--color-accent-1').trim();
+                const accent2Color = getComputedStyle(document.documentElement).getPropertyValue('--color-accent-2').trim();
+                if (accent1Color) document.documentElement.style.setProperty('--color-accent-1-rgb', hexToRgb(accent1Color).join(','));
+                if (accent2Color) document.documentElement.style.setProperty('--color-accent-2-rgb', hexToRgb(accent2Color).join(','));
+            } catch(e) { console.warn("Could not set RGB accent colors for box shadow:", e); }
+
+
+            const logoAnimDurations = { mystical: 2000, dungeons: 2500, gateAppear: 4000, gateOpen: 2000 };
+            const timeForGateOpenTrigger = logoAnimDurations.gateAppear - 500;
+            // const timeForPressSpacePrompt = logoAnimDurations.gateAppear + 500; // Géré par l'animation CSS
+
+            setTimeout(() => {
+                if (dungeonGate) dungeonGate.classList.add('open');
+            }, timeForGateOpenTrigger);
+
+            function startCreditsSequence() {
+                if (creditsStarted) return;
+                creditsStarted = true;
+
+                if (pressSpacePrompt) pressSpacePrompt.classList.add('hidden');
+
+                if (outroAudio) {
+                    outroAudio.play().catch(error => {
+                        console.warn("Audio autoplay was prevented even after interaction:", error);
+                    });
+                }
+
+                const totalLogoTime = logoAnimDurations.gateAppear + logoAnimDurations.gateOpen; 
+                
+                setTimeout(() => {
+                    if (logoScreen) logoScreen.classList.add('fade-out');
+                }, totalLogoTime - (logoAnimDurations.gateOpen / 2) - 300 ); 
+
+                setTimeout(() => {
+                    if (creditsScrollWrapper) creditsScrollWrapper.classList.add('visible');
+                    startCreditsScroll();
+                }, totalLogoTime - (logoAnimDurations.gateOpen / 2) ); 
+            }
+
+            document.addEventListener('keydown', function(event) {
+                if (event.code === 'Space' && !creditsStarted) {
+                    startCreditsSequence();
+                }
+            });
+            // Fallback pour le clic si la barre d'espace n'est pas utilisée
+            if(pressSpacePrompt) {
+                pressSpacePrompt.addEventListener('click', function() {
+                    if (!creditsStarted) {
+                        startCreditsSequence();
+                    }
+                });
+            }
+
+
+            function startCreditsScroll() {
+                const listHeight = creditsList.scrollHeight;
+                const wrapperHeight = creditsScrollWrapper.offsetHeight;
+                
+                let scrollDuration;
+                const audioDuration = outroAudio && outroAudio.duration && isFinite(outroAudio.duration) ? outroAudio.duration * 1000 : 0;
+
+                const scrollSpeedPxPerSec = 100; 
+                const calculatedScrollDuration = (listHeight / scrollSpeedPxPerSec) * 1000;
+
+                if (audioDuration > calculatedScrollDuration && audioDuration > 12000) { 
+                    scrollDuration = audioDuration;
+                } else {
+                    scrollDuration = Math.max(calculatedScrollDuration, 12000);
+                }
+                
+                creditsList.style.transform = `translateY(${wrapperHeight}px)`; 
+                creditsList.style.transition = `transform ${scrollDuration / 1000}s linear`;
+                
+                void creditsList.offsetWidth; 
+
+                creditsList.style.transform = `translateY(-${listHeight}px)`; 
+
+                setTimeout(() => {
+                    if (finalActions) finalActions.classList.add('visible');
+                }, scrollDuration - 1500);
+            }
+        });
+    </script>
+
+</body>
+</html>
