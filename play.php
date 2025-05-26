@@ -35,9 +35,9 @@ $played_levels_session_key = 'played_story_levels_' . $user_id;
 $_SESSION[$played_levels_session_key] = $_SESSION[$played_levels_session_key] ?? [];
 
 
-$mode = $_GET['mode'] ?? 'select_initial_mode'; // select_initial_mode, select_base_level, select_custom_level, play_story_intro, play
+$mode = $_GET['mode'] ?? 'select_initial_mode'; // select_initial_mode, select_base_level, select_custom_level, random_options, process_random_request, play_story_intro, play
 $map_to_load = null;
-$map_type_playing = null; // 'base' or 'custom'
+$map_type_playing = null; // 'base', 'custom', or 'random'
 $story_level_to_intro = null;
 
 $flash_messages = get_flashes();
@@ -136,45 +136,118 @@ $story_content = [
     ],
 ];
 
-
-if ($mode === 'play') {
-    $level_param = $_GET['level'] ?? null;
-    if ($level_param === null) {
-        flash('error', 'No level specified to play.');
-        redirect('play.php?mode=select_initial_mode');
+if ($mode === 'process_random_request') {
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        flash('error', 'Invalid request method for random generation.');
+        redirect('play.php?mode=random_options');
         exit;
     }
 
-    if (strpos($level_param, 'custom_') === false) {
-        $base_map_id_check = (int)$level_param;
-        if ($base_map_id_check >= 1 && $base_map_id_check <= 4) {
-            // On vérifie si le niveau a déjà été marqué comme "intro jouée" CETTE SESSION ou DANS LA BDD (via current_user_level_completed)
-            $has_played_intro_this_session = in_array($base_map_id_check, $_SESSION[$played_levels_session_key]);
-            $is_new_uncompleted_level = $base_map_id_check > $current_user_level_completed;
+    $map_name_raw = $_POST['map_name'] ?? '';
+    $user_difficulty = $_POST['difficulty'] ?? 3;
+    $doors_buttons = $_POST['doors_buttons'] ?? 0;
+    $map_size_req = $_POST['map_size'] ?? 15;
 
-            if ($is_new_uncompleted_level && !$has_played_intro_this_session && isset($story_content[$base_map_id_check])) {
-                $_SESSION[$played_levels_session_key][] = $base_map_id_check; 
-                $_SESSION[$played_levels_session_key] = array_unique($_SESSION[$played_levels_session_key]);
-                sort($_SESSION[$played_levels_session_key]);
-                redirect('play.php?mode=play_story_intro&level=' . $base_map_id_check);
-                exit;
-            }
-        }
+    // Validation
+    $map_size = filter_var($map_size_req, FILTER_VALIDATE_INT, ['options' => ['min_range' => 4, 'max_range' => 89]]);
+    if ($map_size === false) $map_size = 15;
+
+    $user_difficulty_validated = filter_var($user_difficulty, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 5]]);
+    if ($user_difficulty_validated === false) $user_difficulty_validated = 3;
+
+    $doors_buttons_validated = filter_var($doors_buttons, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => 1]]);
+    if ($doors_buttons_validated === false) $doors_buttons_validated = 0;
+    
+    $map_name = htmlspecialchars(trim($map_name_raw), ENT_QUOTES, 'UTF-8');
+    if (empty($map_name)) { // Provide a default name if empty after sanitizing
+        $map_name = 'Random Labyrinth ' . date('H:i');
     }
-}
 
 
-if ($mode === 'play_story_intro') {
-    $story_level_to_intro = isset($_GET['level']) ? (int)$_GET['level'] : null;
-    if ($story_level_to_intro === null || !isset($story_content[$story_level_to_intro])) {
-        flash('error', 'Invalid story level for intro.');
-        redirect('play.php?mode=select_base_level');
+    // Translate difficulty for gen.exe
+    $translated_difficulty = 5; // Default
+    if ($doors_buttons_validated == 1) { // With doors/buttons -> even
+        $difficulty_map_even = [1 => 2, 2 => 4, 3 => 6, 4 => 8, 5 => 10];
+        $translated_difficulty = $difficulty_map_even[$user_difficulty_validated];
+    } else { // No doors/buttons -> odd
+        $difficulty_map_odd = [1 => 1, 2 => 3, 3 => 5, 4 => 7, 5 => 9];
+        $translated_difficulty = $difficulty_map_odd[$user_difficulty_validated];
+    }
+    
+    $gen_executable = './algos/gen.exe'; // Relative to the root where play.php is
+    if (!is_executable($gen_executable)) {
+        flash('error', 'Labyrinth generator is not available or not executable. Please contact an administrator.');
+        redirect('play.php?mode=random_options');
         exit;
     }
+
+    $command = escapeshellcmd("$gen_executable $map_size $translated_difficulty");
+    $output = shell_exec($command);
+
+    if (empty($output) || strpos($output, '_') === false) {
+        flash('error', 'Labyrinth generation failed. The generator returned an unexpected result or an error for the chosen parameters. Output: ' . h($output ?: 'empty'));
+        redirect('play.php?mode=random_options');
+        exit;
+    }
+
+    $parts = explode('_', trim($output), 2);
+    if (count($parts) !== 2) {
+        flash('error', 'Labyrinth generation output parsing failed. Invalid format.');
+        redirect('play.php?mode=random_options');
+        exit;
+    }
+    
+    $actual_map_size = filter_var($parts[0], FILTER_VALIDATE_INT);
+    $matrix_string = $parts[1];
+
+    if ($actual_map_size === false || empty($matrix_string) || ($actual_map_size * $actual_map_size !== strlen(str_replace(';', '', $matrix_string)))) {
+        flash('error', 'Labyrinth generation output parsing failed. Data mismatch or invalid characters. Actual size: '.$actual_map_size.' Matrix length: '.strlen(str_replace(';', '', $matrix_string)));
+        redirect('play.php?mode=random_options');
+        exit;
+    }
+
+    $map_to_load = [
+        'id' => 'random_' . time(),
+        'name' => $map_name, // Already sanitized
+        'size' => (int)$actual_map_size,
+        'map_value' => $matrix_string,
+        'difficulty' => $user_difficulty_validated, // The 1-5 difficulty
+        'author_name' => 'Labyrinth Generator',
+        'map_game_count' => 0, // Will be incremented once when play starts
+        'best_player_time' => 0,
+        'best_player_time_name' => null,
+        'best_player_moves' => 999,
+        'best_player_moves_name' => null
+    ];
+
+    if (!empty(trim($map_name_raw))) { // Only if user provided a name
+        $_SESSION['random_map_to_save'] = [
+            'name' => $map_name, // Use the sanitized name
+            'size' => (int)$actual_map_size,
+            'map_value' => $matrix_string,
+            'difficulty' => $user_difficulty_validated,
+            'user_id' => $user_id
+        ];
+    } else {
+        unset($_SESSION['random_map_to_save']); // Ensure it's cleared if no name
+    }
+    
+    $_SESSION['map_to_load_random'] = $map_to_load;
+    redirect('play.php?mode=play&level=random');
+    exit;
+
 } elseif ($mode === 'play') {
     $level_param = $_GET['level'] ?? null;
 
-    if (strpos($level_param, 'custom_') === 0) {
+    if ($level_param === 'random' && isset($_SESSION['map_to_load_random'])) {
+        $map_to_load = $_SESSION['map_to_load_random'];
+        $map_type_playing = 'random'; 
+        unset($_SESSION['map_to_load_random']);
+    } elseif ($level_param === null) {
+        flash('error', 'No level specified to play.');
+        redirect('play.php?mode=select_initial_mode');
+        exit;
+    } elseif (strpos($level_param, 'custom_') === 0) {
         $custom_map_id = (int)substr($level_param, 7);
         if ($custom_map_id > 4) {
             $stmt = $pdo->prepare('SELECT m.*, u.name as author_name FROM Map m JOIN User u ON m.user_id = u.user_id WHERE m.id = ? LIMIT 1');
@@ -194,11 +267,22 @@ if ($mode === 'play_story_intro') {
     } else { 
         $base_map_id = (int)$level_param;
         if ($base_map_id >= 1 && $base_map_id <= 4) {
-            if ($base_map_id > $current_user_level_completed + 1) {
+            if ($base_map_id > $current_user_level_completed + 1 && $base_map_id != 1) { 
                  flash('error', 'You must complete previous levels first!');
                  redirect('play.php?mode=select_base_level');
                  exit;
             }
+            $has_played_intro_this_session = in_array($base_map_id, $_SESSION[$played_levels_session_key]);
+            $is_new_uncompleted_level = $base_map_id > $current_user_level_completed;
+
+            if ($is_new_uncompleted_level && !$has_played_intro_this_session && isset($story_content[$base_map_id])) {
+                $_SESSION[$played_levels_session_key][] = $base_map_id; 
+                $_SESSION[$played_levels_session_key] = array_unique($_SESSION[$played_levels_session_key]);
+                sort($_SESSION[$played_levels_session_key]);
+                redirect('play.php?mode=play_story_intro&level=' . $base_map_id);
+                exit;
+            }
+
             $stmt = $pdo->prepare('SELECT m.*, u.name as author_name FROM Map m LEFT JOIN User u ON m.user_id = u.user_id WHERE m.id = ? LIMIT 1');
             $stmt->execute([$base_map_id]);
             $map_to_load = $stmt->fetch();
@@ -214,10 +298,34 @@ if ($mode === 'play_story_intro') {
             exit;
         }
     }
+    
+    // Increment user_game_count for the current user if map is loaded successfully
+    // and has not been counted for this session yet for this specific map.
+    if ($map_to_load && isset($map_to_load['id'])) {
+        $map_session_key = 'map_played_' . $map_to_load['id'];
+        if (!isset($_SESSION[$map_session_key])) {
+            try {
+                $stmt_update_user_game_count = $pdo->prepare('UPDATE stats SET user_game_count = user_game_count + 1 WHERE user_id = ?');
+                $stmt_update_user_game_count->execute([$user_id]);
+                $_SESSION[$map_session_key] = true;
+            } catch (PDOException $e) {
+                // Log error or handle, but don't necessarily stop map loading
+                error_log("Error incrementing user_game_count for user $user_id, map_id " . $map_to_load['id'] . ": " . $e->getMessage());
+            }
+        }
+    }
+
+} elseif ($mode === 'play_story_intro') {
+    $story_level_to_intro = isset($_GET['level']) ? (int)$_GET['level'] : null;
+    if ($story_level_to_intro === null || !isset($story_content[$story_level_to_intro])) {
+        flash('error', 'Invalid story level for intro.');
+        redirect('play.php?mode=select_base_level');
+        exit;
+    }
 }
 
 
-if (!in_array($mode, ['play', 'play_story_intro'])) {
+if (!in_array($mode, ['play', 'play_story_intro', 'process_random_request'])) {
     $base_levels_data = [];
     $user_maps_data = [];
     $search_query = '';
@@ -442,10 +550,10 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
 <?php if ($mode === 'select_initial_mode'): ?>
     <h1 class="text-4xl font-bold text-grad mb-12 text-center"><i class="fas fa-dungeon mr-3"></i>Choose Your Path</h1>
     <div class="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-        <a href="#" class="mode-select-button btn-disabled" onclick="event.preventDefault(); showManualFlash('info', 'Random Labyrinth is coming soon!');">
+        <a href="play.php?mode=random_options" class="mode-select-button">
             <i class="fas fa-dice-d20"></i>
             <h2>Random Labyrinth</h2>
-            <p>Venture into an unpredictably generated dungeon. (Coming Soon)</p>
+            <p>Venture into an unpredictably generated dungeon and customize your challenge.</p>
         </a>
         <a href="play.php?mode=select_base_level" class="mode-select-button">
             <i class="fas fa-book-dead"></i>
@@ -494,6 +602,11 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
                 </div>
                 <?php if ($is_unlocked): ?>
                     <a href="play.php?mode=play&level=<?= $level_id ?>" class="btn play-button"><i class="fas fa-play mr-2"></i><?= $is_completed ? 'Replay Chapter' : 'Enter Chapter' ?></a>
+                    <?php if (isset($story_content[$level_id])): ?>
+                        <a href="play.php?mode=play_story_intro&level=<?= $level_id ?>" class="btn play-button mt-2" style="background: linear-gradient(135deg,#17a2b8 0%,#106c7a 100%); font-size:0.9rem; padding: 0.6rem 1rem;">
+                            <i class="fas fa-book-open mr-2"></i>Play Story Narration
+                        </a>
+                    <?php endif; ?>
                 <?php else: ?>
                     <button class="btn play-button btn-disabled" disabled><i class="fas fa-lock mr-2"></i>Locked</button>
                 <?php endif; ?>
@@ -540,11 +653,41 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
     <?php endif; ?>
 
 <?php elseif ($mode === 'random_options'): ?>
-    <div class="page-header-container"><h1 class="text-4xl font-bold text-grad"><i class="fas fa-cogs mr-3"></i>Random Labyrinth</h1><a href="play.php?mode=select_initial_mode" class="back-button"><i class="fas fa-arrow-left mr-2"></i>Back to Modes</a></div>
+    <div class="page-header-container">
+        <h1 class="text-4xl font-bold text-grad"><i class="fas fa-cogs mr-3"></i>Random Labyrinth Configuration</h1>
+        <a href="play.php?mode=select_initial_mode" class="back-button"><i class="fas fa-arrow-left mr-2"></i>Back to Modes</a>
+    </div>
     <p class="page-subtitle">Configure your randomly generated adventure.</p>
-    <div class="panel max-w-md mx-auto p-8 no-hover-effect">
-        <p class="text-xl text-center text-gray-300"><i class="fas fa-tools text-2xl mr-2 text-amber-400"></i>Random labyrinth generation is under active development!</p>
-        <p class="text-center mt-6"><a href="play.php?mode=select_initial_mode" class="btn"><i class="fas fa-arrow-left mr-2"></i>Return to Mode Selection</a></p>
+    <div class="panel max-w-lg mx-auto p-6 sm:p-8 no-hover-effect">
+        <form method="POST" action="play.php?mode=process_random_request">
+            <div class="mb-6">
+                <label for="map_name" class="block text-sm font-medium text-gray-300 mb-1">Map Name (Optional - for saving)</label>
+                <input type="text" name="map_name" id="map_name" placeholder="E.g., My Awesome Dungeon" class="input-field w-full">
+            </div>
+            <div class="mb-6">
+                <label for="difficulty" class="block text-sm font-medium text-gray-300 mb-1">Select Difficulty (1-5)</label>
+                <select name="difficulty" id="difficulty" class="input-field w-full">
+                    <option value="1">1 - Easiest</option>
+                    <option value="2">2 - Easy</option>
+                    <option value="3" selected>3 - Medium</option>
+                    <option value="4">4 - Hard</option>
+                    <option value="5">5 - Hardest</option>
+                </select>
+            </div>
+            <div class="mb-6">
+                <label for="doors_buttons" class="block text-sm font-medium text-gray-300 mb-1">Include Doors & Buttons?</label>
+                <select name="doors_buttons" id="doors_buttons" class="input-field w-full">
+                    <option value="1">Yes</option>
+                    <option value="0" selected>No</option>
+                </select>
+            </div>
+            <div class="mb-6">
+                <label for="map_size" class="block text-sm font-medium text-gray-300 mb-1">Desired Map Size (4-89, experimental)</label>
+                <input type="number" name="map_size" id="map_size" value="15" min="4" max="89" class="input-field w-full">
+                <p class="text-xs text-gray-500 mt-1">Note: Very large sizes might take longer or be unstable.</p>
+            </div>
+            <button type="submit" class="btn w-full mt-4 text-lg py-3"><i class="fas fa-dice-d20 mr-2"></i>Generate Labyrinth</button>
+        </form>
     </div>
 
 <?php elseif ($mode === 'play_story_intro' && $story_level_to_intro && isset($story_content[$story_level_to_intro])): 
@@ -580,15 +723,27 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
             if (storyAudio) { storyAudio.pause(); storyAudio.currentTime = 0; }
             window.location.href = `play.php?mode=play&level=${levelToPlay}`;
         }
-        if(playBtn) playBtn.addEventListener('click', () => {
-            if (storyAudio.paused) {
-                storyAudio.play().catch(e => console.error("Audio play failed:", e));
+
+        if(playBtn && storyAudio) { // Ensure elements exist
+            playBtn.addEventListener('click', () => {
+                if (storyAudio.paused) {
+                    storyAudio.play().catch(e => console.error("Audio play failed:", e));
+                    playBtn.innerHTML = '<i class="fas fa-pause mr-2"></i> Pause Narration';
+                } else {
+                    storyAudio.pause();
+                    playBtn.innerHTML = '<i class="fas fa-volume-up mr-2"></i> Resume Narration';
+                }
+            });
+
+            // Attempt to auto-play
+            storyAudio.play().then(() => {
                 playBtn.innerHTML = '<i class="fas fa-pause mr-2"></i> Pause Narration';
-            } else {
-                storyAudio.pause();
-                playBtn.innerHTML = '<i class="fas fa-volume-up mr-2"></i> Resume Narration';
-            }
-        });
+            }).catch(e => {
+                console.warn("Audio auto-play was prevented by the browser:", e);
+                playBtn.innerHTML = '<i class="fas fa-volume-up mr-2"></i> Listen to the Story (Autoplay Blocked)';
+            });
+        }
+
         if(storyAudio) storyAudio.onended = () => {
             if(playBtn) playBtn.innerHTML = '<i class="fas fa-check mr-2"></i> Narration Finished. Play Again or Skip.';
         };
@@ -596,7 +751,7 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
     </script>
 
 <?php elseif($mode === 'play' && $map_to_load):
-  $current_map_id = (int)$map_to_load['id'];
+  $current_map_id = $map_to_load['id']; // Can be integer for base/custom or string for random
   $current_map_size = (int)$map_to_load['size'];
   // MAP_CHARS will be initialized in JS from MAP_CHARS_ORIGINAL
 ?>
@@ -606,7 +761,7 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
           <?php if ($map_to_load['author_name']): ?>Crafted by: <span class="text-amber-300"><?= h($map_to_load['author_name']) ?></span> |
           <?php elseif ($map_type_playing === 'base'): ?>An Ancient Chapter |<?php endif; ?>
           Size: <?= $current_map_size ?>x<?= $current_map_size ?>
-          <?php if($map_to_load['difficulty']): ?> | Difficulty: <?= (int)$map_to_load['difficulty'] ?>/10 <?php endif; ?>
+          <?php if($map_to_load['difficulty']): ?> | Difficulty: <?= (int)$map_to_load['difficulty'] ?><?= ($map_type_playing === 'random' ? '/5' : '/10') ?> <?php endif; ?>
       </p>
       <p class="text-gray-400 text-xs mb-3">Ventured <?= (int)$map_to_load['map_game_count'] ?> times</p>
       <?php if( ($map_to_load['best_player_time'] > 0 && $map_to_load['best_player_time_name'] && $map_to_load['best_player_time_name'] !== 'none' && $map_to_load['best_player_time_name'] !== null) || ($map_to_load['best_player_moves'] < 999 && $map_to_load['best_player_moves'] > 0 && $map_to_load['best_player_moves_name'] && $map_to_load['best_player_moves_name'] !== 'none' && $map_to_load['best_player_moves_name'] !== null) ): ?>
@@ -622,7 +777,7 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
     <div class="panel p-2 px-3 text-sm no-hover-effect">Time: <span id="timeDisplay" class="font-bold text-amber-300">0s</span></div>
     <button id="zoomInBtn" class="btn btn-sm p-2 px-2" title="Zoom In"><i class="fas fa-search-plus"></i></button>
     <button id="zoomOutBtn" class="btn btn-sm p-2 px-2" title="Zoom Out"><i class="fas fa-search-minus"></i></button>
-    <?php if ($map_type_playing === 'custom'): ?>
+    <?php if ($map_type_playing === 'custom' || $map_type_playing === 'random'): ?>
     <button id="hintBtn" class="btn btn-sm p-2 px-2" style="background:linear-gradient(135deg,#17a2b8 0%,#106c7a 100%);" title="Hint"><i class="fas fa-lightbulb mr-1"></i>Hint</button>
     <button id="giveUpBtn" class="btn btn-sm p-2 px-2" style="background:linear-gradient(135deg,#c82333 0%,#a01010 100%);" title="Give Up"><i class="fas fa-flag-checkered mr-1"></i>Give Up</button>
     <?php endif; ?>
@@ -630,21 +785,21 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
   <div id="gridWrapper" class="grid-wrap hidden"><div id="gameGrid" class="grid"></div></div>
 
   <script>
-  const MAP_ID = <?= $current_map_id ?>;
+  const MAP_ID_RAW = '<?= $current_map_id ?>'; // Could be int or string like 'random_123456'
+  const MAP_ID_FOR_SAVE = <?= ($map_type_playing === 'base' || $map_type_playing === 'custom') ? (int)$current_map_id : "'random'" ?>; // 'random' for session-based, or actual int ID
   const MAP_TYPE = '<?= $map_type_playing ?>'; 
   const MAP_SIZE = <?= $current_map_size ?>;
   const MAP_CHARS_ORIGINAL = Object.freeze([...<?= json_encode(str_split(str_replace(';','',$map_to_load['map_value']))) ?>]);
   let MAP_CHARS_CURRENT = [...MAP_CHARS_ORIGINAL]; // Mutable copy for doors
   const USER_NAME = <?= json_encode($user_name) ?>;
-  const IS_CUSTOM_MAP = <?= $map_type_playing === 'custom' ? 'true' : 'false' ?>;
+  const IS_RANDOM_OR_CUSTOM_MAP = <?= ($map_type_playing === 'custom' || $map_type_playing === 'random') ? 'true' : 'false' ?>;
 
   const AUDIO_FILES = {
       collision: <?= json_encode(glob('assets/audios/collision/*.mp3') ?: []) ?>,
       victory: <?= json_encode(glob('assets/audios/victoire/*.mp3') ?: []) ?>,
       giveUp: <?= json_encode(glob('assets/audios/giveup/*.mp3') ?: []) ?>,
       ambiance: <?= json_encode(glob('assets/audios/ambiance/*.mp3') ?: []) ?>,
-      // Add a door toggle sound if you have one:
-      // door_toggle: ['assets/audios/effects/door_creak.mp3'] 
+      door_toggle: ['assets/audios/doors/minecraft-door-open.mp3', 'assets/audios/doors/minecraft-door-close.mp3'] 
   };
   let logicalGrid = [], currentTilePx = 30, playerPos = { x:0, y:0 }, startPos = { x:0, y:0 }, exitPos = { x:0, y:0 };
   let moveCounter = 0, timeElapsedSec = 0, gameTimerId, isGameActive = false;
@@ -686,12 +841,12 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
     for(let r = 0; r < MAP_SIZE; r++) {
       for(let c = 0; c < MAP_SIZE; c++) {
         const currentIndex = r * MAP_SIZE + c;
-        const originalTileInMapChars = +MAP_CHARS_ORIGINAL[currentIndex]; // Check original map def
+        const originalTileInMapChars = +MAP_CHARS_ORIGINAL[currentIndex]; 
 
-        if (originalTileInMapChars === TILE_DOOR_C || originalTileInMapChars === TILE_DOOR_O) { // Only toggle if it was originally a door
+        if (originalTileInMapChars === TILE_DOOR_C || originalTileInMapChars === TILE_DOOR_O) { 
             if (logicalGrid[r][c] === TILE_DOOR_C) {
                 logicalGrid[r][c] = TILE_DOOR_O;
-                MAP_CHARS_CURRENT[currentIndex] = String(TILE_DOOR_O); // Update current working map
+                MAP_CHARS_CURRENT[currentIndex] = String(TILE_DOOR_O); 
                 updateCellAppearance(c, r, TILE_DOOR_O);
             } else if (logicalGrid[r][c] === TILE_DOOR_O) {
                 logicalGrid[r][c] = TILE_DOOR_C;
@@ -701,11 +856,11 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
         }
       }
     }
-    // playSoundEffect('door_toggle', 0.4); 
+    playSoundEffect('door_toggle', 0.4); 
   }
 
   function buildGameGrid() {
-    MAP_CHARS_CURRENT = [...MAP_CHARS_ORIGINAL]; // Reset current map to original state (doors closed/open as defined)
+    MAP_CHARS_CURRENT = [...MAP_CHARS_ORIGINAL]; 
     gameGridElement.innerHTML = ''; 
     gameGridElement.style.gridTemplateColumns = `repeat(${MAP_SIZE}, ${currentTilePx}px)`;
     gameGridElement.style.gridTemplateRows = `repeat(${MAP_SIZE}, ${currentTilePx}px)`;
@@ -739,9 +894,11 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
         renderPlayerPosition();    
         isGameActive = true;
         moveCounter = 0; timeElapsedSec = 0; hintRevealed = false;
-        if (IS_CUSTOM_MAP) {
+        if (IS_RANDOM_OR_CUSTOM_MAP) { // Enable for random maps too
             const hintBtn = document.getElementById('hintBtn');
             if (hintBtn) { hintBtn.disabled = false; hintBtn.style.opacity = 1; }
+            const giveUpBtn = document.getElementById('giveUpBtn');
+            if (giveUpBtn) { giveUpBtn.disabled = false; giveUpBtn.style.opacity = 1; }
         }
         movesDisplayElement.textContent = moveCounter;
         timeDisplayElement.textContent = timeElapsedSec + 's';
@@ -767,21 +924,24 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
     playerDivElement.classList.remove('player-collide', 'player-victory', 'player-giveup');
 
     if (nextX >= 0 && nextY >= 0 && nextX < MAP_SIZE && nextY < MAP_SIZE) {
-        const nextTileValueInLogic = logicalGrid[nextY][nextX]; // Check the current state of the logical grid
+        const nextTileValueInLogic = logicalGrid[nextY][nextX]; 
         if (IS_TILE_PASSABLE(nextTileValueInLogic)) {
             playerPos.x = nextX; playerPos.y = nextY;
             moveCounter++;
             movesDisplayElement.textContent = moveCounter;
             renderPlayerPosition();
 
-            const originalTileAtPlayerPos = +MAP_CHARS_ORIGINAL[nextY * MAP_SIZE + nextX]; // What the tile is defined as in the map string
+            const originalTileAtPlayerPos = +MAP_CHARS_ORIGINAL[nextY * MAP_SIZE + nextX]; 
             if (originalTileAtPlayerPos === TILE_BUTTON) {
                 toggleAllDoors();
             }
 
             if (playerPos.x === exitPos.x && playerPos.y === exitPos.y) {
                 playerDivElement.classList.add('player-victory');
-                triggerGameEnd(true, MAP_TYPE === 'base' ? 'Chapter Complete!' : 'Realm Conquered!');
+                let victoryMessage = 'Realm Conquered!';
+                if (MAP_TYPE === 'base') victoryMessage = 'Chapter Complete!';
+                else if (MAP_TYPE === 'random') victoryMessage = 'Random Labyrinth Cleared!';
+                triggerGameEnd(true, victoryMessage);
             }
         } else {
             playSoundEffect('collision', 0.4); 
@@ -799,7 +959,7 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
   document.getElementById('zoomInBtn').onclick = () => adjustZoomLevel(5);
   document.getElementById('zoomOutBtn').onclick = () => adjustZoomLevel(-5);
 
-  if (IS_CUSTOM_MAP) { const giveUpBtn = document.getElementById('giveUpBtn'); const hintBtn = document.getElementById('hintBtn'); if (giveUpBtn) giveUpBtn.onclick = () => { if (!isGameActive || !playerDivElement) return; revealSolutionPath(); playerDivElement.classList.add('player-giveup'); triggerGameEnd(false, 'Realm Abandoned'); }; if (hintBtn) hintBtn.onclick = () => { if (!isGameActive || hintRevealed) return; revealSolutionPath(); hintRevealed = true; hintBtn.disabled = true; hintBtn.style.opacity = 0.7; }; }
+  if (IS_RANDOM_OR_CUSTOM_MAP) { const giveUpBtn = document.getElementById('giveUpBtn'); const hintBtn = document.getElementById('hintBtn'); if (giveUpBtn) giveUpBtn.onclick = () => { if (!isGameActive || !playerDivElement) return; revealSolutionPath(); playerDivElement.classList.add('player-giveup'); triggerGameEnd(false, MAP_TYPE === 'random' ? 'Labyrinth Abandoned' : 'Realm Abandoned'); }; if (hintBtn) hintBtn.onclick = () => { if (!isGameActive || hintRevealed) return; revealSolutionPath(); hintRevealed = true; hintBtn.disabled = true; hintBtn.style.opacity = 0.7; }; }
   
   function findPathBFS() { const queue = [[startPos.x, startPos.y, []]]; const visited = new Set([`${startPos.x},${startPos.y}`]); const DIRS = [[0, -1], [0, 1], [-1, 0], [1, 0]]; while (queue.length) { const [cx, cy, path] = queue.shift(); if (cx === exitPos.x && cy === exitPos.y) return path.concat([[cx,cy]]); for (const [dx, dy] of DIRS) { const nx = cx + dx; const ny = cy + dy; const nextKey = `${nx},${ny}`; if (nx >= 0 && ny >= 0 && nx < MAP_SIZE && ny < MAP_SIZE && !visited.has(nextKey) && IS_TILE_PASSABLE(logicalGrid[ny][nx])) { visited.add(nextKey); const newPath = path.concat([[cx,cy]]); queue.push([nx, ny, newPath]); }}} return null; }
   function revealSolutionPath() { const solutionPath = findPathBFS(); if (solutionPath) { solutionPath.forEach(([px, py], index) => { if (!((px === startPos.x && py === startPos.y) || (px === exitPos.x && py === exitPos.y) || (playerDivElement && px === playerPos.x && py === playerPos.y))) { const cellDiv = gameGridElement.children[py * MAP_SIZE + px]; if (cellDiv) { setTimeout(() => cellDiv.classList.add('path-highlight'), index * 25);}}});}}
@@ -807,15 +967,37 @@ body{font-family:'MedievalSharp',cursive;background:#0f0e17;color:#e8e8e8;backgr
   async function triggerGameEnd(isVictory, titleText) {
     isGameActive = false; clearInterval(gameTimerId); if(ambianceSound) { ambianceSound.pause(); ambianceSound.currentTime = 0; }
     if (isVictory) playSoundEffect('victory', 0.6); else playSoundEffect('giveUp', 0.5);
-    const formData = new FormData(); formData.append('map_id', MAP_ID); formData.append('map_type', MAP_TYPE); formData.append('time_taken', timeElapsedSec); formData.append('moves_made', moveCounter); formData.append('is_victory', isVictory ? '1' : '0'); formData.append('used_hint', hintRevealed ? '1' : '0');
-    let recordMessages = [];
-    try { const response = await fetch('ajax_save_score.php', { method: 'POST', body: formData }); const resultText = await response.text(); try { const result = JSON.parse(resultText); if (result.success) { console.log('Score saved.'); if (result.new_best_time) recordMessages.push({type: 'time', text: "🏆 New Best Time Record!"}); if (result.new_best_moves) recordMessages.push({type: 'moves', text: "✨ New Fewest Moves Record!"}); } else { console.error('Failed to save score:', result.error || 'Unknown. Raw:', resultText); } } catch (e) { console.error('Error parsing JSON (ajax_save_score):', e, "Raw:", resultText); } } catch (error) { console.error('Network error saving score:', error); }
+
+    if (isVictory && MAP_TYPE === 'base' && MAP_ID_FOR_SAVE === 4) {
+        window.location.href = 'credits.html';
+        return; 
+    }
+    
+    if (MAP_ID_FOR_SAVE !== 'random' || (MAP_TYPE === 'random' && <?= isset($_SESSION['random_map_to_save']) ? 'true' : 'false' ?> && MAP_ID_RAW.startsWith('random_'))) {
+        const formData = new FormData(); 
+        formData.append('map_id', MAP_ID_FOR_SAVE); 
+        formData.append('map_type', MAP_TYPE); 
+        formData.append('time_taken', timeElapsedSec); 
+        formData.append('moves_made', moveCounter); 
+        formData.append('is_victory', isVictory ? '1' : '0'); 
+        formData.append('used_hint', hintRevealed ? '1' : '0');
+        if (MAP_TYPE === 'random' && isVictory && MAP_ID_RAW.startsWith('random_')) {
+             formData.append('save_random_map', '1');
+        }
+
+        let recordMessages = [];
+        try { const response = await fetch('ajax_save_score.php', { method: 'POST', body: formData }); const resultText = await response.text(); try { const result = JSON.parse(resultText); if (result.success) { console.log('Score/Map interaction processed.'); if (result.new_best_time) recordMessages.push({type: 'time', text: "🏆 New Best Time Record!"}); if (result.new_best_moves) recordMessages.push({type: 'moves', text: "✨ New Fewest Moves Record!"}); if (result.map_saved_as_id) { titleText += ` (Saved as ID: ${result.map_saved_as_id})`; } } else { console.error('Failed to save score/map:', result.error || 'Unknown. Raw:', resultText); } } catch (e) { console.error('Error parsing JSON (ajax_save_score):', e, "Raw:", resultText); } } catch (error) { console.error('Network error saving score/map:', error); }
+    }
+    
     const modalOverlayDiv = document.createElement('div'); modalOverlayDiv.className = 'fixed inset-0 bg-black/80 flex items-center justify-center z-50 modal-backdrop p-4';
     let modalHTML = `<div class="panel p-6 md:p-8 text-center modal-content w-full max-w-md"><h2 class="text-3xl ${isVictory ? 'text-green-400' : 'text-red-500'} mb-3 font-bold"><i class="fas ${isVictory ? 'fa-trophy' : (titleText.includes('Abandoned') ? 'fa-flag' : 'fa-skull-crossbones')} mr-2"></i>${titleText}</h2>`;
     if (isVictory && recordMessages.length > 0) { recordMessages.forEach(msg => { let RmsgClass = 'record-both'; if (recordMessages.length === 1) RmsgClass = msg.type === 'time' ? 'record-time' : 'record-moves'; modalHTML += `<p class="record-message ${RmsgClass} mb-1">${msg.text}</p>`; });}
     modalHTML += `<p class="mb-1 text-gray-300 text-lg">Moves: <b class="text-amber-300">${moveCounter}</b></p><p class="mb-6 text-gray-300 text-lg">Time: <b class="text-amber-300">${timeElapsedSec}s</b></p>`;
-    if (isVictory && MAP_TYPE === 'base' && MAP_ID < 4) modalHTML += `<a href="play.php?mode=play&level=${MAP_ID + 1}" class="btn text-base mb-3 w-full sm:w-auto sm:mr-2"><i class="fas fa-arrow-right mr-2"></i>Next Chapter</a>`;
-    modalHTML += `<a href="play.php?mode=${MAP_TYPE === 'base' ? 'select_base_level' : 'select_custom_level'}" class="btn text-base w-full sm:w-auto" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);"><i class="fas ${MAP_TYPE === 'base' ? 'fa-map-signs' : 'fa-scroll'} mr-2"></i>Back to Selection</a><a href="play.php?mode=select_initial_mode" class="block mt-4 text-sm text-gray-400 hover:text-amber-300">Return to Main Menu</a></div>`;
+    if (isVictory && MAP_TYPE === 'base' && MAP_ID_FOR_SAVE < 4) modalHTML += `<a href="play.php?mode=play&level=${MAP_ID_FOR_SAVE + 1}" class="btn text-base mb-3 w-full sm:w-auto sm:mr-2"><i class="fas fa-arrow-right mr-2"></i>Next Chapter</a>`;
+    
+    let backLink = `play.php?mode=${MAP_TYPE === 'base' ? 'select_base_level' : (MAP_TYPE === 'custom' ? 'select_custom_level' : 'random_options')}`;
+    let backIcon = MAP_TYPE === 'base' ? 'fa-map-signs' : (MAP_TYPE === 'custom' ? 'fa-scroll' : 'fa-cogs');
+    modalHTML += `<a href="${backLink}" class="btn text-base w-full sm:w-auto" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);"><i class="fas ${backIcon} mr-2"></i>Back to Selection</a><a href="play.php?mode=select_initial_mode" class="block mt-4 text-sm text-gray-400 hover:text-amber-300">Return to Main Menu</a></div>`;
     modalOverlayDiv.innerHTML = modalHTML; document.body.appendChild(modalOverlayDiv); modalOverlayDiv.onclick = (e) => { if (e.target === modalOverlayDiv) modalOverlayDiv.remove(); }
   }
 
